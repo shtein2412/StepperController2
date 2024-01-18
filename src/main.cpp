@@ -3,7 +3,7 @@
 #include "OneButton.h"
 #include <Ticker.h>
 
-#define SerialMes
+//#define SerialMes
 
 #define BtnPressTicks 10
 
@@ -21,32 +21,18 @@
 #define M2Dir 3
 #define M2Stp 4
 
-#define M1Speed_init 4000
-#define M1Acc_init 20000
+#define M1Speed_init 100
+#define M1Speed_min 10
+#define M1Speed_max 1000
+#define M1Acc_init 1000
 #define MaxPos 1000000000
-#define M2Speed_init 4000
-#define M2Acc_init 20000
+#define M2Speed_init 100
+#define M2Speed_min 10
+#define M2Speed_max 1000
+#define M2Acc_init 1000
 
-long M1Speed=M1Speed_init;
-long M1Acc=M1Acc_init;
-long M2Speed=M2Speed_init;
-long M2Acc=M2Acc_init;
-int Dir1=0;
-int LastDir1=0;
-int Dir2=0;
-int LastDir2=0;
-
-OneButton M1CW(M1CW_IN,true);
-OneButton M1CCW(M1CCW_IN,true);
-OneButton M2CW(M2CW_IN,true);
-OneButton M2CCW(M2CCW_IN,true);
-OneButton M1SpUp(M1SpUp_IN,true);
-OneButton M1SpDn(M1SpDn_IN,true);
-OneButton M2SpUp(M2SpUp_IN,true);
-OneButton M2SpDn(M2SpDn_IN,true);
-
-AccelStepper M1(AccelStepper::DRIVER, M1Stp, M1Dir);
-AccelStepper M2(AccelStepper::DRIVER, M2Stp, M2Dir);
+#define SpeedChangeT 100
+#define SpeedK 1.02
 
 void M1StartCW();
 void M1StartCCW();
@@ -69,6 +55,33 @@ void MSpUpStart(int);
 void MSpUpStop(int);
 void MSpDnStart(int);
 void MSpDnStop(int);
+
+void SpeedChange();
+
+float M1Speed=M1Speed_init;
+long M1Acc=M1Acc_init;
+float M2Speed=M2Speed_init;
+long M2Acc=M2Acc_init;
+int Dir1=0;
+int LastDir1=0;
+int Dir2=0;
+int LastDir2=0;
+float M1speedK=1;
+float M2speedK=1;
+
+OneButton M1CW(M1CW_IN,true);
+OneButton M1CCW(M1CCW_IN,true);
+OneButton M2CW(M2CW_IN,true);
+OneButton M2CCW(M2CCW_IN,true);
+OneButton M1SpUp(M1SpUp_IN,true);
+OneButton M1SpDn(M1SpDn_IN,true);
+OneButton M2SpUp(M2SpUp_IN,true);
+OneButton M2SpDn(M2SpDn_IN,true);
+
+AccelStepper M1(AccelStepper::DRIVER, M1Stp, M1Dir);
+AccelStepper M2(AccelStepper::DRIVER, M2Stp, M2Dir);
+
+Ticker SpeedTicker(SpeedChange, SpeedChangeT, 0, MILLIS);
 
 void M1StartCW(){
   MStart(1,1);
@@ -136,14 +149,14 @@ void MStart(int Mn, int dir){
   #endif
   switch (dir){
     case 0:
-      if (Mn==1) M1.move(LastDir1*M1Speed*M1Speed/2/M1Acc);
-      if (Mn==2) M2.move(LastDir2*M2Speed*M2Speed/2/M2Acc);
+      if (Mn==1) {M1.move(LastDir1*M1Speed*M1Speed/2/M1Acc);Dir1=dir;}
+      if (Mn==2) {M2.move(LastDir2*M2Speed*M2Speed/2/M2Acc);Dir2=dir;}
     break;
 
     case 1:
     case -1:
-      if (Mn==1) M1.move(dir*MaxPos);
-      if (Mn==2) M2.move(dir*MaxPos);
+      if (Mn==1) {M1.move(dir*MaxPos);Dir1=dir;}
+      if (Mn==2) {M2.move(dir*MaxPos);Dir2=dir;}
     break;
   }
 
@@ -166,6 +179,12 @@ void MSpUpStart(int Mn){
     Serial.print("Speed Up ");
     Serial.println(Mn);
   #endif
+  if (Mn==1){
+    M1speedK=SpeedK;
+  }
+  if (Mn==2){
+    M2speedK=SpeedK;
+  }
 }
 
 void MSpDnStart(int Mn){
@@ -173,6 +192,12 @@ void MSpDnStart(int Mn){
     Serial.print("Speed Down ");
     Serial.println(Mn);
   #endif
+  if (Mn==1){
+    M1speedK=1/SpeedK;
+  }
+  if (Mn==2){
+    M2speedK=1/SpeedK;
+  }
 }
 
 void MSpUpStop(int Mn){
@@ -180,6 +205,12 @@ void MSpUpStop(int Mn){
     Serial.print("Const speed ");
     Serial.println(Mn);
   #endif
+  if (Mn==1){
+    M1speedK=1;
+  }
+  if (Mn==2){
+    M2speedK=1;
+  }
 }
 
 void MSpDnStop(int Mn){
@@ -187,6 +218,37 @@ void MSpDnStop(int Mn){
     Serial.print("Const speed ");
     Serial.println(Mn);
   #endif
+  if (Mn==1){
+    M1speedK=1;
+  }
+  if (Mn==2){
+    M2speedK=1;
+  }
+}
+
+void SpeedChange(){
+  if ((Dir1!=0)&&(M1speedK!=1)){
+    M1Speed=pow(M1Speed,M1speedK);
+    if (M1Speed<M1Speed_min) M1Speed=M1Speed_min;
+    if (M1Speed>M1Speed_max) M1Speed=M1Speed_max;
+    M1.setMaxSpeed(M1Speed);
+    MStart(1, LastDir1);
+    #ifdef SerialMes
+      Serial.print("M1 speed=");
+      Serial.println(M1Speed);
+    #endif
+  }
+  if ((Dir2!=0)&&(M2speedK!=1)){
+    M2Speed=pow(M2Speed,M2speedK);
+    if (M2Speed<M2Speed_min) M2Speed=M2Speed_min;
+    if (M2Speed>M2Speed_max) M2Speed=M2Speed_max;
+    M2.setMaxSpeed(M2Speed);
+    MStart(2, LastDir2);
+    #ifdef SerialMes
+      Serial.print("M2 speed=");
+      Serial.println(M2Speed);
+    #endif
+  }
 }
 
 void setup() {
@@ -236,6 +298,8 @@ void setup() {
   M2.setAcceleration(M1Acc);
   M2.setSpeed(0);
   M2.setCurrentPosition(0);
+
+  SpeedTicker.start();
 }
 
 void loop() {
@@ -249,4 +313,5 @@ void loop() {
   M2SpDn.tick();
   M1.run();
   M2.run();
+  SpeedTicker.update();
 }
